@@ -5,9 +5,10 @@ import EDADashboard from './components/EDADashboard';
 import ImbalanceLab from './components/ImbalanceLab';
 import ModelStudio from './components/ModelStudio';
 import LiveSimulator from './components/LiveSimulator';
+import CSVImporter from './components/CSVImporter';
 import InterviewGuide from './components/InterviewGuide';
 import PythonCodeViewer from './components/PythonCodeViewer';
-import { ShieldAlert, Code2, Sparkles } from 'lucide-react';
+import { ShieldAlert, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -44,6 +45,10 @@ export default function App() {
           <LiveSimulator />
         )}
 
+        {activeTab === 'csv' && (
+          <CSVImporter />
+        )}
+
         {activeTab === 'interview' && (
           <InterviewGuide />
         )}
@@ -69,7 +74,7 @@ export default function App() {
           <div className="flex items-center space-x-4 text-xs text-slate-400 font-medium">
             <span className="flex items-center space-x-1">
               <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>SMOTE & PR-AUC Engine</span>
+              <span>CSV Batch Fraud Engine</span>
             </span>
             <span>•</span>
             <span className="text-slate-500">ML Interview Portfolio Ready</span>

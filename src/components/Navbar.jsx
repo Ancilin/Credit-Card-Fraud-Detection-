@@ -7,7 +7,8 @@ import {
   Zap, 
   GraduationCap, 
   Code2, 
-  Activity 
+  Activity,
+  UploadCloud 
 } from 'lucide-react';
 
 export default function Navbar({ activeTab, setActiveTab }) {
@@ -16,7 +17,8 @@ export default function Navbar({ activeTab, setActiveTab }) {
     { id: 'eda', label: 'EDA Hub', icon: BarChart3 },
     { id: 'imbalance', label: 'Imbalance & SMOTE', icon: Layers },
     { id: 'models', label: 'Model Studio', icon: Cpu },
-    { id: 'simulator', label: 'Live Fraud Simulator', icon: Zap },
+    { id: 'simulator', label: 'Live Simulator', icon: Zap },
+    { id: 'csv', label: 'CSV Import & Predict', icon: UploadCloud },
     { id: 'interview', label: 'ML Interview Guide', icon: GraduationCap },
     { id: 'python', label: 'Python & Notebook', icon: Code2 },
   ];
@@ -51,7 +53,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     isActive
                       ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
@@ -68,7 +70,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
           <div className="flex items-center space-x-3">
             <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Schema: Kaggle 284.8k TX</span>
+              <span>CSV Batch Engine Ready</span>
             </div>
           </div>
 

@@ -1,7 +1,7 @@
 /**
  * Credit Card Fraud Detection ML Engine
  * Simulates Kaggle Credit Card Fraud Dataset (284k schema with V1-V28 PCA features, Time, Amount)
- * Features: Resampling (SMOTE, Undersampling, Class Weighting), Model evaluation, Threshold tuning, SHAP attribution
+ * Features: Resampling (SMOTE, Undersampling, Class Weighting), Model evaluation, Threshold tuning, SHAP attribution, CSV Batch Import & Prediction
  */
 
 // Random seed generator for reproducible dataset generation
@@ -23,8 +23,6 @@ function randomNormal(mean = 0, std = 1, rng = Math.random) {
 }
 
 // Key Kaggle PCA Features and their typical distribution shifts for Fraud vs Normal
-// V14, V12, V10, V17 are strong negative indicators when fraud occurs
-// V4, V11, V2 are strong positive indicators when fraud occurs
 export const FEATURE_PROPERTIES = {
   V14: { name: 'V14 (PCA)', fraudMean: -4.5, normalMean: 0.1, std: 1.2, importance: 0.22, desc: 'Primary PCA Feature (Strongest Fraud Marker)' },
   V12: { name: 'V12 (PCA)', fraudMean: -3.8, normalMean: 0.05, std: 1.1, importance: 0.18, desc: 'Secondary PCA Risk Feature' },
@@ -47,7 +45,7 @@ export function generateSyntheticDataset(sampleCount = 5000, fraudRatio = 0.015)
 
   // Generate Normal Transactions
   for (let i = 0; i < normalCount; i++) {
-    const time = Math.floor(rng() * 172800); // 48 hours in seconds
+    const time = Math.floor(rng() * 172800);
     const amount = Math.max(1.0, Math.exp(randomNormal(3.2, 1.2, rng)));
     
     const row = {
@@ -69,7 +67,6 @@ export function generateSyntheticDataset(sampleCount = 5000, fraudRatio = 0.015)
   // Generate Fraud Transactions
   for (let i = 0; i < fraudCount; i++) {
     const time = Math.floor(rng() * 172800);
-    // Fraud transaction amounts often have bimodal spike (very small test charges or large drains)
     const isLarge = rng() > 0.4;
     const amount = isLarge ? randomNormal(350, 180, rng) : randomNormal(12, 5, rng);
 
@@ -99,7 +96,7 @@ export function generateSyntheticDataset(sampleCount = 5000, fraudRatio = 0.015)
 }
 
 /**
- * Perform Resampling Simulation (SMOTE, Undersampling, Cost Weighting)
+ * Perform Resampling Simulation (SMOTE, Undersampling, Class Weighting)
  */
 export function simulateResampling(dataset, method = 'smote') {
   const normal = dataset.filter(d => d.Class === 0);
@@ -117,9 +114,8 @@ export function simulateResampling(dataset, method = 'smote') {
   }
 
   if (method === 'smote') {
-    // Generate synthetic minority samples by interpolating between fraud points
     const syntheticFraud = [...fraud];
-    const targetCount = Math.min(normal.length, fraud.length * 8); // Upsample up to 50:50 or 8x
+    const targetCount = Math.min(normal.length, fraud.length * 8);
     const needed = targetCount - fraud.length;
 
     for (let i = 0; i < needed; i++) {
@@ -156,7 +152,6 @@ export function simulateResampling(dataset, method = 'smote') {
   }
 
   if (method === 'undersample') {
-    // Subsample normal transactions to match fraud count
     const sampledNormal = normal.slice(0, fraud.length * 3);
     const combined = [...sampledNormal, ...fraud];
     return {
@@ -186,7 +181,6 @@ export function simulateResampling(dataset, method = 'smote') {
  * Benchmark Classifier Performance across Resampling strategies
  */
 export function getModelPerformanceSpecs(modelKey = 'xgboost', resampling = 'smote', threshold = 0.5) {
-  // Base metrics for model configurations based on empirical Kaggle benchmark results
   const benchmarks = {
     logistic_regression: {
       raw:         { baseP: 0.85, baseR: 0.62, roc: 0.92, prAuc: 0.72 },
@@ -224,13 +218,10 @@ export function getModelPerformanceSpecs(modelKey = 'xgboost', resampling = 'smo
     ? benchmarks[modelKey][resampling] 
     : benchmarks.xgboost.smote;
 
-  // Adjust precision & recall dynamically according to classification decision threshold
-  // As threshold increases: Precision increases, Recall decreases
   const tDiff = threshold - 0.5;
   let recall = Math.min(0.99, Math.max(0.10, spec.baseR - tDiff * 0.45));
   let precision = Math.min(0.99, Math.max(0.05, spec.baseP + tDiff * 0.35));
 
-  // Compute confusion matrix for a standard evaluation split (e.g. 56,962 transactions with ~98 fraud)
   const totalEval = 56962;
   const actualFraud = 98;
   const actualNormal = totalEval - actualFraud;
@@ -242,13 +233,12 @@ export function getModelPerformanceSpecs(modelKey = 'xgboost', resampling = 'smo
 
   const accuracy = (TP + TN) / totalEval;
   const f1 = (2 * precision * recall) / (precision + recall || 1);
-  const f2 = (5 * precision * recall) / (4 * precision + recall || 1); // F2 weights recall twice as heavily as precision
+  const f2 = (5 * precision * recall) / (4 * precision + recall || 1);
 
-  // Financial Cost Matrix ($500 per uncaught fraud FN, $15 per false alert FP)
   const costPerFN = 500;
   const costPerFP = 15;
   const totalFinancialCost = (FN * costPerFN) + (FP * costPerFP);
-  const baselineNoMLCost = actualFraud * costPerFN; // $49,000 lost if no fraud detected
+  const baselineNoMLCost = actualFraud * costPerFN;
   const costSavings = baselineNoMLCost - totalFinancialCost;
 
   return {
@@ -280,7 +270,6 @@ export function generateROCCurve(rocAuc = 0.99) {
   const steps = 25;
   for (let i = 0; i <= steps; i++) {
     const fpr = i / steps;
-    // Power curve approximation for smooth ROC matching target AUC
     const power = (1 - rocAuc) * 12 + 1;
     const tpr = Math.min(1, Math.pow(fpr, 1 / power));
     points.push({
@@ -305,7 +294,7 @@ export function generatePRCurve(prAuc = 0.94) {
     points.push({
       recall: parseFloat(recall.toFixed(3)),
       precision: parseFloat(precision.toFixed(3)),
-      baselineRatio: 0.0017 // Baseline constant ratio line
+      baselineRatio: 0.0017
     });
   }
   return points;
@@ -315,7 +304,6 @@ export function generatePRCurve(prAuc = 0.94) {
  * Predict Fraud Probability and generate SHAP-like feature attributions for live simulation
  */
 export function predictFraudScore(features) {
-  // Weights matching trained XGBoost/Logistic Regression coefficients on Kaggle data
   const weights = {
     V14: -0.85,
     V12: -0.72,
@@ -327,11 +315,11 @@ export function predictFraudScore(features) {
     Amount: 0.003
   };
 
-  let logit = -3.2; // Base bias for low fraud probability (~0.03 default)
+  let logit = -3.2;
   const attributions = [];
 
   for (const [key, prop] of Object.entries(FEATURE_PROPERTIES)) {
-    const val = features[key] !== undefined ? features[key] : prop.normalMean;
+    const val = features[key] !== undefined ? parseFloat(features[key]) : prop.normalMean;
     const weight = weights[key] || 0.1;
     const delta = (val - prop.normalMean) * weight;
     logit += delta;
@@ -345,7 +333,6 @@ export function predictFraudScore(features) {
     });
   }
 
-  // Sigmoid activation
   const probability = 1 / (1 + Math.exp(-logit));
   const roundedProb = parseFloat(probability.toFixed(4));
 
@@ -362,7 +349,6 @@ export function predictFraudScore(features) {
     badgeColor = 'blue';
   }
 
-  // Sort attributions by absolute impact magnitude
   attributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
 
   return {
@@ -372,6 +358,103 @@ export function predictFraudScore(features) {
     badgeColor,
     attributions
   };
+}
+
+/**
+ * Parse CSV text and run batch fraud predictions
+ */
+export function parseCSVAndPredictBatch(csvText) {
+  const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
+  if (lines.length <= 1) {
+    throw new Error('CSV file is empty or missing data rows.');
+  }
+
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+  
+  const results = [];
+  let totalFraud = 0;
+  let totalHighSuspicion = 0;
+  let totalModerate = 0;
+  let totalSafe = 0;
+  let totalDollarAtRisk = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const rowValues = lines[i].split(',').map(val => val.trim().replace(/^["']|["']$/g, ''));
+    if (rowValues.length < headers.length) continue;
+
+    const rowObj = {};
+    headers.forEach((h, idx) => {
+      const num = parseFloat(rowValues[idx]);
+      rowObj[h] = isNaN(num) ? rowValues[idx] : num;
+    });
+
+    const txId = rowObj.id || rowObj.ID || rowObj.TransactionId || `CSV-TX-${1000 + i}`;
+    const amount = typeof rowObj.Amount === 'number' ? rowObj.Amount : (typeof rowObj.amount === 'number' ? rowObj.amount : 50.0);
+    const time = typeof rowObj.Time === 'number' ? rowObj.Time : (typeof rowObj.time === 'number' ? rowObj.time : i * 10);
+
+    const featureInputs = {
+      Time: time,
+      Amount: amount,
+      V14: typeof rowObj.V14 === 'number' ? rowObj.V14 : 0.0,
+      V12: typeof rowObj.V12 === 'number' ? rowObj.V12 : 0.0,
+      V10: typeof rowObj.V10 === 'number' ? rowObj.V10 : 0.0,
+      V4:  typeof rowObj.V4 === 'number' ? rowObj.V4 : 0.0,
+      V11: typeof rowObj.V11 === 'number' ? rowObj.V11 : 0.0,
+      V17: typeof rowObj.V17 === 'number' ? rowObj.V17 : 0.0,
+      V2:  typeof rowObj.V2 === 'number' ? rowObj.V2 : 0.0,
+    };
+
+    const pred = predictFraudScore(featureInputs);
+
+    if (pred.riskLevel === 'CRITICAL FRAUD') {
+      totalFraud++;
+      totalDollarAtRisk += amount;
+    } else if (pred.riskLevel === 'HIGH SUSPICION') {
+      totalHighSuspicion++;
+      totalDollarAtRisk += amount * 0.5;
+    } else if (pred.riskLevel === 'MODERATE RISK') {
+      totalModerate++;
+    } else {
+      totalSafe++;
+    }
+
+    results.push({
+      rowNumber: i,
+      id: txId,
+      Time: time,
+      Amount: amount,
+      probability: pred.probability,
+      percentScore: pred.percentScore,
+      riskLevel: pred.riskLevel,
+      badgeColor: pred.badgeColor,
+      topRiskFeature: pred.attributions[0]?.feature || 'N/A',
+      rawRow: rowObj
+    });
+  }
+
+  return {
+    totalProcessed: results.length,
+    totalFraud,
+    totalHighSuspicion,
+    totalModerate,
+    totalSafe,
+    totalDollarAtRisk: parseFloat(totalDollarAtRisk.toFixed(2)),
+    predictions: results
+  };
+}
+
+/**
+ * Generate sample CSV template string for testing import
+ */
+export function generateSampleCSVTemplate() {
+  return `Time,Amount,V14,V12,V10,V4,V11,V17,V2
+0,42.50,0.15,-0.08,0.02,0.1,-0.2,0.05,-0.1
+120,1450.00,-4.85,-3.9,-3.1,3.4,2.8,-3.3,2.6
+350,1.25,-5.2,-4.1,-4.5,4.1,3.2,-4.0,3.1
+540,88.20,0.05,0.01,-0.02,-0.1,0.05,0.02,0.1
+820,3200.00,0.2,0.1,0.0,-0.3,-0.1,0.1,-0.2
+990,195.00,-4.1,-3.2,-2.9,2.8,2.5,-3.0,2.1
+1200,15.99,0.08,0.02,0.0,0.0,-0.1,0.0,0.0`;
 }
 
 /**
